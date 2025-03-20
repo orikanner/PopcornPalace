@@ -5,7 +5,7 @@ export class Movie {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column() //i think should be unique
+  @Column({ unique: true })
   title: string;
 
   @Column()

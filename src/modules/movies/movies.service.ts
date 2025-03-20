@@ -45,13 +45,16 @@ export class MoviesService {
      * If the update fails, throws InternalServerErrorException.
      */
     async updateMovie(movieTitle: string, updateData: UpdateMovieDto): Promise<void> {
-        const movie = await this.moviesRepository.findOne({ where: { title: movieTitle } });
-        if (!movie) throw new NotFoundException(`Movie with title "${movieTitle}" not found.`);
-
         try {
+            const movie = await this.moviesRepository.findOne({ where: { title: movieTitle } });
+            if (!movie) throw new NotFoundException(`Movie with title "${movieTitle}" not found.`);
+
             Object.assign(movie, updateData);
             await this.moviesRepository.save(movie);
         } catch (error) {
+            if (error instanceof NotFoundException) {
+                throw error;
+            }
             throw new InternalServerErrorException('Something went wrong while updating the movie.');
         }
     }
@@ -62,12 +65,15 @@ export class MoviesService {
      * If something fails while deleting, throws InternalServerErrorException.
      */
     async deleteMovie(movieTitle: string): Promise<void> {
-        const movie = await this.moviesRepository.findOne({ where: { title: movieTitle } });
-        if (!movie) throw new NotFoundException(`Movie with title "${movieTitle}" not found.`);
-
         try {
+            const movie = await this.moviesRepository.findOne({ where: { title: movieTitle } });
+            if (!movie) throw new NotFoundException(`Movie with title "${movieTitle}" not found.`);
+
             await this.moviesRepository.delete({ title: movieTitle });
         } catch (error) {
+            if (error instanceof NotFoundException) {
+                throw error;
+            }
             throw new InternalServerErrorException('Something went wrong while deleting the movie.');
         }
     }

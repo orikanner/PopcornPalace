@@ -1,5 +1,5 @@
 import { Movie } from 'src/modules/movies/entities/movie.entity';
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 
 @Entity()
 export class Showtime {
@@ -9,10 +9,14 @@ export class Showtime {
     @Column({ type: 'decimal' })
     price: number;
 
-    // if the movie is deleted, the relevant showtimes will be deleted
-    // @Column()
-    @ManyToOne(()=>Movie, {onDelete: 'CASCADE'}) 
+    @Column()
     movieId: number;
+
+    
+    // if the movie is deleted, the relevant showtimes will be deleted as well
+    @ManyToOne(()=>Movie, {onDelete: 'CASCADE'}) 
+    @JoinColumn({name: 'movieId'}) // 
+    movie: Movie;
 
     @Column()
     theater: string;

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, BadRequestException, HttpCode } from '@nestjs/common';
 import { MoviesService } from './movies.service';
 import { CreateMovieDto } from './dto/create-movie.dto';
 import { UpdateMovieDto } from './dto/update-movie.dto';
@@ -8,16 +8,19 @@ export class MoviesController {
     constructor(private readonly moviesService: MoviesService) { }
 
     @Get('/all')
+    @HttpCode(200)
     async findAll() {
         return await this.moviesService.findAll();
     }
 
     @Post()
+    @HttpCode(200)
     async addMovie(@Body() createMovieDto: CreateMovieDto) {
         return await this.moviesService.addMovie(createMovieDto);
     }
 
     @Post('/update/:movieTitle')
+    @HttpCode(200)
     async updateMovie(
         @Param('movieTitle') movieTitle: string,
         @Body() updateMovieDto: UpdateMovieDto
@@ -31,6 +34,7 @@ export class MoviesController {
     }
 
     @Delete(':movieTitle')
+    @HttpCode(200)
     async deleteMovie(@Param('movieTitle') movieTitle: string): Promise<void> {
         if (!movieTitle) {
             throw new BadRequestException('Movie title is required in the URL.');
