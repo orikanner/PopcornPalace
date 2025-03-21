@@ -1,10 +1,14 @@
 import { BadRequestException, HttpException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Showtime } from './entities/showtime.entity';
 import { CreateShowtimeDto } from './dto/create-showtime.dto';
 import { DataSource } from 'typeorm';
 import { UpdateShowtimeDto } from './dto/update-showtime.dto';
+
+// !!! DONT FORGET
+// BECAUSE OF the foreign_key IN SHOWTIME ENTITY we will get an error during CU actions when using an invalid foreign_key
+//https://www.postgresql.org/docs/current/errcodes-appendix.html
 
 @Injectable()
 export class ShowtimesService {
@@ -54,10 +58,9 @@ export class ShowtimesService {
                 // Check for overlapping showtimes
                 const count = await entityManager.createQueryBuilder(Showtime, 'showtime')
                     .where('showtime.theater = :theater', { theater })
-                    .andWhere(new Brackets((qb) => { // cool syntax unnecessary though.. added () around "related Time where-s"
-                        qb.where('showtime.startTime <= :endTime', { endTime })
-                            .andWhere('showtime.endTime >= :startTime', { startTime });
-                    }))
+                    //.andWhere(new Brackets((qb) => { // cool syntax. to add () around wheres .addWhere(new Brackets...
+                    .andWhere('showtime.startTime <= :endTime', { endTime })
+                    .andWhere('showtime.endTime >= :startTime', { startTime })
                     .getCount();
 
                 if (count > 0) {
@@ -68,6 +71,9 @@ export class ShowtimesService {
             });
 
         } catch (error) {
+            if (error.code == 23503) { // Class 23 — Integrity Constraint Violation
+                throw new InternalServerErrorException('Failed to create showtime ~ invalid movieId');
+            }
             if (error instanceof BadRequestException) {
                 throw error; // Forward expected validation error
             }
@@ -100,7 +106,7 @@ export class ShowtimesService {
                         .where('showtime.theater = :theater', { theater })
                         .andWhere('showtime.startTime <= :endTime', { endTime })
                         .andWhere('showtime.endTime >= :startTime', { startTime })
-                        .andWhere('NOT(showtime.id = :showtimeId)', { showtimeId })
+                        .andWhere('NOT(showtime.id = :showtimeId)', { showtimeId }) //verify !!
                         .getCount(); //remove self maybe need to check 
                     if (count_overlapping > 0) {
                         throw new BadRequestException('At the requested time there is already a showtime scheduled in this theater');
@@ -113,6 +119,9 @@ export class ShowtimesService {
             })
 
         } catch (error) {
+            if (error.code == 23503) { // Class 23 - Integrity Constraint Violation 
+                throw new InternalServerErrorException('Failed to update showtime ~ invalid movieId');
+            }
             if (error instanceof NotFoundException || error instanceof BadRequestException) {
                 throw error
             }
@@ -145,10 +154,22 @@ export class ShowtimesService {
             throw new BadRequestException("Start time can't be after endTime")
         }
     }
-    private error_handler(error: HttpException, def_msg: string) {
-        if (error instanceof NotFoundException || error instanceof BadRequestException) {
-            throw error
-        }
-        throw new InternalServerErrorException(def_msg)
-    }
+
+
+
+
+
+
+
+
+    // i think this would be an overkill :)
+    // private error_handler(error: any, def_msg: string) {
+    //     if (error.code == 23503) {
+    //         throw new InternalServerErrorException('Failed to update showtime ~ invalid movieId');
+    //     }
+    //     if (error instanceof NotFoundException || error instanceof BadRequestException) {
+    //         throw error
+    //     }
+    //     throw new InternalServerErrorException(def_msg)
+    // }
 }
