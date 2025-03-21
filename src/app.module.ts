@@ -10,14 +10,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
   imports: [
     TypeOrmModule.forRoot({
       type: 'postgres',
-      host: 'localhost',  // If running locally
+      host: 'localhost',  // running locally
       port: 5432,
       username: 'popcorn-palace',
       password: 'popcorn-palace',
       database: 'popcorn-palace',
       autoLoadEntities: true,
       entities: [Movie],
-      synchronize: true,
+      synchronize: true, // updates in dev
     }),
     MoviesModule, ShowtimesModule, BookingsModule
   ],

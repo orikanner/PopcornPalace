@@ -5,7 +5,7 @@ import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToOne
 @Unique(['showtimeId', 'seatNumber'])
 export class Booking {
     @PrimaryGeneratedColumn('uuid')
-    bookingId: number;
+    bookingId: string;
 
     @Column()
     showtimeId: number;

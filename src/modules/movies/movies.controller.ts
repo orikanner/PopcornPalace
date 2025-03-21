@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, BadRequestException, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { MoviesService } from './movies.service';
 import { CreateMovieDto } from './dto/create-movie.dto';
 import { UpdateMovieDto } from './dto/update-movie.dto';
@@ -25,9 +25,7 @@ export class MoviesController {
         @Param('movieTitle') movieTitle: string,
         @Body() updateMovieDto: UpdateMovieDto
     ): Promise<void> {
-        if (!movieTitle) { // this custom error doesnt work because nest expect a string
-            // maybe i can do movieTitle: string | undefined this will force to enter the route handler
-            // need to check this... 
+        if (!movieTitle || movieTitle.trim().length === 0) {
             throw new BadRequestException('Movie title is required in the URL.');
         }
         await this.moviesService.updateMovie(movieTitle, updateMovieDto);
@@ -36,7 +34,7 @@ export class MoviesController {
     @Delete(':movieTitle')
     @HttpCode(200)
     async deleteMovie(@Param('movieTitle') movieTitle: string): Promise<void> {
-        if (!movieTitle) {
+        if (!movieTitle || movieTitle.trim().length === 0) {
             throw new BadRequestException('Movie title is required in the URL.');
         }
         await this.moviesService.deleteMovie(movieTitle);

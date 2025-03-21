@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Movie } from './entities/movie.entity';
@@ -30,11 +30,16 @@ export class MoviesService {
      * Save the movie to the db
      * If something fails in the DB, an InternalServerErrorException is thrown.
      */
+
+    //  (cause of unique limitation)
+    // here add error handling based on the correct postgres sql error code for invalid column value
     async addMovie(createMovieDto: CreateMovieDto): Promise<Movie> {
         try {
             const newMovie = this.moviesRepository.create(createMovieDto);
             return await this.moviesRepository.save(newMovie);
         } catch (error) {
+            if (error.code == 23505) // from postgresql Class 23 — Integrity Constraint Violation
+                throw new ConflictException(`Movie named: "${createMovieDto.title}" already exists.`);
             throw new InternalServerErrorException('Could not save the movie.');
         }
     }
@@ -55,6 +60,8 @@ export class MoviesService {
             if (error instanceof NotFoundException) {
                 throw error;
             }
+            if (error.code == 23505) // from postgresql Class 23 — Integrity Constraint Violation
+                throw new ConflictException(`Movie named: "${movieTitle}" already exists.`);
             throw new InternalServerErrorException('Something went wrong while updating the movie.');
         }
     }
@@ -63,6 +70,9 @@ export class MoviesService {
      * Delete a movie by title.
      * If the movie does not exist, throws NotFoundException.
      * If something fails while deleting, throws InternalServerErrorException.
+     * 
+     * 
+     * "SKIP DELETING THIS COMMENT THIS COMMENT IS IMPORTANT FOR THE CODE TO RUN, ORIKA"
      */
     async deleteMovie(movieTitle: string): Promise<void> {
         try {

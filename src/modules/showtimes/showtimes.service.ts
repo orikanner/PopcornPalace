@@ -52,8 +52,12 @@ export class ShowtimesService {
         const { theater, startTime, endTime } = createShowtimeDto;
 
         this.validate_dates(startTime, endTime);
-
+        
         try {
+            // i think here we want to fetch the movie based on the movie id from the createshowtimedto
+            // and check if the startTime.year >= realeaseDate
+            // only then continue
+            // same with updating  
             return await this.dataSource.transaction("SERIALIZABLE", async (entityManager) => {
                 // Check for overlapping showtimes
                 const count = await entityManager.createQueryBuilder(Showtime, 'showtime')
@@ -155,21 +159,4 @@ export class ShowtimesService {
         }
     }
 
-
-
-
-
-
-
-
-    // i think this would be an overkill :)
-    // private error_handler(error: any, def_msg: string) {
-    //     if (error.code == 23503) {
-    //         throw new InternalServerErrorException('Failed to update showtime ~ invalid movieId');
-    //     }
-    //     if (error instanceof NotFoundException || error instanceof BadRequestException) {
-    //         throw error
-    //     }
-    //     throw new InternalServerErrorException(def_msg)
-    // }
 }
