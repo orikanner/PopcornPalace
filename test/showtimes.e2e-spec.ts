@@ -18,37 +18,34 @@ describe('Showtimes E2E', () => {
         app = moduleFixture.createNestApplication();
         app.useGlobalPipes(new ValidationPipe());
         await app.init();
+        // Create test movie that all tests will use
+        const movieResponse = await request(app.getHttpServer())
+            .post('/movies')
+            .send({
+                title: movieTitle,
+                genre: 'Test',
+                duration: 85,
+                rating: 8,
+                releaseYear: 2000
+            });
+        createdMovieId = movieResponse.body.id;
+
+        // Create initial showtime
+        const showtimeResponse = await request(app.getHttpServer())
+            .post('/showtimes')
+            .send({
+                movieId: createdMovieId,
+                price: 15,
+                theater: 'default',
+                startTime: "2024-08-06T10:00:00",
+                endTime: "2024-08-06T11:30:00"
+            });
+        createdShowtimeId = showtimeResponse.body.id;
     });
 
     describe('Showtime Flow', () => {
-        it('should successfully create a showtime', async () => {
-            // 1. Create a movie
-            const movieResponse = await request(app.getHttpServer())
-                .post('/movies')
-                .send({
-                    title: movieTitle,
-                    genre: 'Test',
-                    duration: 85,
-                    rating: 8,
-                    releaseYear: 2000
-                })
-                .expect(200);
-            createdMovieId = movieResponse.body.id
-            // 2. Create showtime
-            const createdShowtime = await request(app.getHttpServer())
-                .post('/showtimes')
-                .send({
-                    movieId: createdMovieId,
-                    price: 15,
-                    theater: 'default',
-                    startTime: "2024-08-06T10:00:00",
-                    endTime: "2024-08-06T11:30:00"
-                })
-                .expect(200);
-            createdShowtimeId = createdShowtime.body.id
-        });
-
-        it('should reject overlapping showtimes in same theater', async () => {
+       
+        it('should reject overlapping showtimes in same theater - shows the importance of excludeSelf', async () => {
             await request(app.getHttpServer())
                 .post('/showtimes')
                 .send({
@@ -61,6 +58,17 @@ describe('Showtimes E2E', () => {
                 .expect(400);
         });
 
+        // COOL CASE
+        it('should allow updating showtime timing even if it would overlap with itself', async () => {
+            await request(app.getHttpServer())
+                .post(`/showtimes/update/${createdShowtimeId}`)
+                .send({
+                    startTime: "2024-08-06T09:00:00",
+                    endTime: "2024-08-06T10:30:00"
+                })
+                .expect(200);
+        });
+
         it('should reject update with invalid movie ID', async () => {
             const response = await request(app.getHttpServer())
                 .post(`/showtimes/update/${createdShowtimeId}`)
@@ -70,16 +78,12 @@ describe('Showtimes E2E', () => {
 
             // console.log('Response status:', response.status);  actully found a bug with these tests :: Hhh
             // console.log('Response body:', response.body);
-
             expect(response.status).toBe(404);
-            await request(app.getHttpServer())
-                .delete(`/movies/${movieTitle}`)
-                .expect(200);
         });
     });
 
     describe('Validation Failures', () => {
-        it('should reject invalid date format', () => {
+        it('should reject invalid date format', async () => {
             const invalidUpdateShowtimeDto = {
                 startTime: "abc"
             };
@@ -91,7 +95,13 @@ describe('Showtimes E2E', () => {
     });
 
     afterAll(async () => {
-        await app.close();
+        try {
+            await request(app.getHttpServer())
+                .delete(`/movies/${movieTitle}`)
+                .expect(200);
+        } finally {
+            await app.close();
+        }
     });
 });
 

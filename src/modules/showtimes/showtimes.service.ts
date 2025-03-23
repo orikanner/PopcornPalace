@@ -8,9 +8,9 @@ import { CreateShowtimeDto } from './dto/create-showtime.dto';
 import { UpdateShowtimeDto } from './dto/update-showtime.dto';
 import { Movie } from '../movies/entities/movie.entity';
 // In this service, I originally implemented create&update operations with transactions and row locking.
-// Although it passed all tests, I felt it was overkill.
-// Without transactions or some other solution, there's a potential race condition where P1 and P2 could both read,
-// see no overlap, and write simultaneously which would cause overlap.
+// Although it passed all tests, I felt it was a bit of an overkill for this assignment.
+// Without transactions or some other solution,there is a potential race condition where P1 and P2 could both read,
+// see no overlap, and write simultaneously which would cause showtimes to overlap.
 
 
 interface ShowtimeValidationResult {
@@ -30,10 +30,11 @@ export class ShowtimesService {
 
     ) { }
 
+
     /**
      * Gets a showtime by its ID
      * Throws NotFoundException if not found
-     * @returns Promise<Showtime> The found showtime
+     * @returns The found showtime
      */
     async getShowtimeById(showtimeId: number): Promise<Showtime> {
         try {
@@ -51,10 +52,7 @@ export class ShowtimesService {
     /**
      * Creates a new showtime
      * Handles theater overlap checks and movie duration validation
-     * @param createShowtimeDto - Data for creating new showtime
      * @returns The newly created showtime
-     * @throws BadRequestException if theater is busy or duration is insufficient
-     * @throws NotFoundException if movie does not exist
      */
     async addShowtime(createShowtimeDto: CreateShowtimeDto): Promise<Showtime> {
         const { movieId, theater, startTime, endTime } = createShowtimeDto;
@@ -63,21 +61,21 @@ export class ShowtimesService {
             // step 1 validate that start time is before end time
             this.validateDates(startTime, endTime);
 
-            // step 2: Validate movie exists and check constraints
+            // step 2 validate movie exists and check that the showtime duration is long enough
             const validations = await this.validateShowtimeWithMovie(
                 movieId,
                 startTime,
                 endTime
             );
 
-            // Handle any validation failures (will throw exceptions if validations fail
+            // handle any validation failures (will throw exceptions if validations fail
             this.handleValidations(validations);
 
             // step 3 Check for scheduling conflicts in the requested theater
             // for new showtimes, we don't need to exclude any existing showtime ID
             const excludeSelfShowtime: number = null;
 
-            // query for any overlapping showtimes and count them
+            // query for any overlapping showtimes and count 
             const countOverlappingShowtimes = await this.createOverlapQuery(
                 theater,
                 startTime,
@@ -106,12 +104,8 @@ export class ShowtimesService {
 
     /**
      * Updates an existing showtime
-     * Only validates conflicts when time/theater fields are modified
-     * @param showtimeId - ID of showtime to update
-     * @param updateShowtimeDto - Updated showtime data
+     * Only validates conflicts when movieId/time/theater fields are modified
      * @returns The updated showtime
-     * @throws NotFoundException if showtime does not exist
-     * @throws BadRequestException if update creates scheduling conflict
      */
     async updateShowtime(showtimeId: number, updateShowtimeDto: UpdateShowtimeDto) {
         try {
@@ -120,6 +114,7 @@ export class ShowtimesService {
                 .where('showtime.id = :showtimeId', { showtimeId })
                 .getOne()
             if (!showtime) throw new NotFoundException(`Showtime with id "${showtimeId}" not found.`)
+
             // Step 2: Check conflicts if updateShowtimeDto contains attributes that can cause overlapping or edge cases problems
             if (updateShowtimeDto.movieId || updateShowtimeDto.theater || updateShowtimeDto.startTime || updateShowtimeDto.endTime) {
                 const movieId = updateShowtimeDto.movieId ?? showtime.movieId
@@ -129,7 +124,7 @@ export class ShowtimesService {
 
                 // validate that start time is before end time
                 this.validateDates(startTime, endTime);
-                // edge cases validatiosn that can be caused by movie realse time etc 
+                // validate movie exists and check that the showtime duration is long enough
                 const validations = await this.validateShowtimeWithMovie(movieId, startTime, endTime)
                 this.handleValidations(validations)
 
@@ -180,10 +175,6 @@ export class ShowtimesService {
 
     /**
      * Checks for overlapping showtimes in a theater
-     * @param theater - Theater to check
-     * @param startTime - Start of time window
-     * @param endTime - End of time window
-     * @param excludeShowtimeId - Skip this showtime ID when checking
      * @returns QueryBuilder for overlapping showtimes
      */
     private createOverlapQuery(
@@ -209,8 +200,6 @@ export class ShowtimesService {
 
     /**
      * Validates showtime dates
-     * @param startTime - Showtime start
-     * @param endTime - Showtime end
      * @throws BadRequestException if start is after end
      */
     private validateDates(startTime: Date, endTime: Date) {
@@ -222,9 +211,6 @@ export class ShowtimesService {
 
     /**
      * Validates movie and showtime constraints
-     * @param movieId - Movie to validate
-     * @param startTime - Showtime start
-     * @param endTime - Showtime end
      * @returns Movie exists, duration is valid, release date is valid
      */
     private async validateShowtimeWithMovie(

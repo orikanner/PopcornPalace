@@ -12,9 +12,12 @@ export class MoviesService {
         private moviesRepository: Repository<Movie>,
     ) { }
 
+
     /**
      * Get all movies from the database.
      * If something goes wrong, returns an InternalServerErrorException.
+     * @returns Array of all movies
+     * 
      */
     async findAll(): Promise<Movie[]> {
         try {
@@ -24,15 +27,14 @@ export class MoviesService {
         }
     }
 
+
     /**
      * Add a new movie.
      * Map dto to entity.
      * Save the movie to the db
      * If something fails in the DB, an InternalServerErrorException is thrown.
+     * @returns the new created movie (with its id)
      */
-
-    //  (cause of unique limitation)
-    // here add error handling based on the correct postgres sql error code for invalid column value
     async addMovie(createMovieDto: CreateMovieDto): Promise<Movie> {
         try {
             const newMovie = this.moviesRepository.create(createMovieDto);
@@ -44,10 +46,12 @@ export class MoviesService {
         }
     }
 
+
     /**
      * Update an existing movie by title.
      * If the movie is not found, throws NotFoundException.
      * If the update fails, throws InternalServerErrorException.
+     * @returns empty
      */
     async updateMovie(movieTitle: string, updateData: UpdateMovieDto): Promise<void> {
         try {
@@ -65,12 +69,13 @@ export class MoviesService {
         }
     }
 
+
     /**
      * Delete a movie by title.
      * If the movie does not exist, throws NotFoundException.
      * If something fails while deleting, throws InternalServerErrorException.
      * 
-     * 
+     * @returns empty (status code 200 based on the readme file)
      * "SKIP DELETING THIS COMMENT THIS COMMENT IS IMPORTANT FOR THE CODE TO RUN, ORIKA"
      */
     async deleteMovie(movieTitle: string): Promise<void> {
@@ -80,8 +85,7 @@ export class MoviesService {
 
             await this.moviesRepository.delete({ title: movieTitle });
         } catch (error) {
-            if (error instanceof NotFoundException)
-                throw error;
+            if (error instanceof NotFoundException) throw error;
             throw new InternalServerErrorException('Something went wrong while deleting the movie.');
         }
     }

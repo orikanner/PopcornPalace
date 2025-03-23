@@ -10,7 +10,9 @@ describe('Bookings e2e', () => {
     let app: INestApplication;
     const timestamp = Date.now();
     const movieTitle = `Test Movie ${timestamp}`;
+    let createdMovieId: number;
     let createdShowtimeId: number;
+
 
     beforeAll(async () => {
         const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -20,42 +22,47 @@ describe('Bookings e2e', () => {
         app = moduleFixture.createNestApplication();
         app.useGlobalPipes(new ValidationPipe());
         await app.init();
+        // Create test movie
+        const movieResponse = await request(app.getHttpServer())
+            .post('/movies')
+            .send({
+                title: movieTitle,
+                genre: 'Test',
+                duration: 1,
+                rating: 8,
+                releaseYear: 1948
+            });
+        createdMovieId = movieResponse.body.id;
+
+        // Create test showtime
+        const showtimeResponse = await request(app.getHttpServer())
+            .post('/showtimes')
+            .send({
+                movieId: createdMovieId,
+                price: 15,
+                theater: 'default',
+                startTime: new Date('1948-08-06T09:00:00Z'),
+                endTime: new Date('1948-08-06T09:01:00Z')
+            });
+        createdShowtimeId = showtimeResponse.body.id;
+        // book a ticket to test conflicts 
+        await request(app.getHttpServer())
+            .post('/bookings')
+            .send({
+                showtimeId: createdShowtimeId,
+                seatNumber: 15,
+                userId: "84438967-f68f-4fa0-b620-0f08217e76af"
+            });
+
     });
 
     describe('Booking Flow', () => {
         it('should book a ticket', async () => {
-            // 1. Create a movie
-            const movieResponse = await request(app.getHttpServer())
-                .post('/movies')
-                .send({
-                    title: movieTitle,
-                    genre: 'Test',
-                    duration: 1,
-                    rating: 8,
-                    releaseYear: 1948
-                })
-                .expect(200);
-
-            // 2. Create showtime
-            const showtimeResponse = await request(app.getHttpServer())
-                .post('/showtimes')
-                .send({
-                    movieId: movieResponse.body.id,
-                    price: 15,
-                    theater: 'default',
-                    startTime: new Date('1948-08-06T09:00:00Z'),
-                    endTime: new Date('1948-08-06T09:01:00Z')
-                })
-                .expect(200);
-
-            createdShowtimeId = showtimeResponse.body.id;
-
-            // 3. Book ticket
             await request(app.getHttpServer())
                 .post('/bookings')
                 .send({
-                    showtimeId: showtimeResponse.body.id,
-                    seatNumber: 15,
+                    showtimeId: createdShowtimeId,
+                    seatNumber: 16,
                     userId: "84438967-f68f-4fa0-b620-0f08217e76af"
                 })
                 .expect(200);
@@ -71,19 +78,16 @@ describe('Bookings e2e', () => {
                 })
                 .expect(409);
 
-            await request(app.getHttpServer())
-                .delete(`/movies/${movieTitle}`)
-                .expect(200);
         });
     });
 
     describe('Validation Failures', () => {
-        it('Should fail with invalid seat number format', () => {
+        it('Should fail with invalid seat number format', async () => {
             const invalidBooking = {
                 seatNumber: 'A15',  // Should be number
                 showtimeId: 1
             };
-            return request(app.getHttpServer())
+            await request(app.getHttpServer())
                 .post('/bookings')
                 .send(invalidBooking)
                 .expect(400);
@@ -91,7 +95,13 @@ describe('Bookings e2e', () => {
     });
 
     afterAll(async () => {
-        await app.close();
+        try {
+            await request(app.getHttpServer())
+                .delete(`/movies/${movieTitle}`)
+                .expect(200);
+        } finally {
+            await app.close();
+        }
     });
 });
 

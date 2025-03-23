@@ -147,12 +147,10 @@ describe('MoviesService', () => {
     });
 
     it('should throw NotFoundException when deleting a non-existent movie', async () => {
-      // Arrange
       const nonExistentTitle = 'Another Non Existent Movie';
 
       jest.spyOn(repository, 'findOne').mockResolvedValue(null);
 
-      // Act & Assert
       await expect(service.deleteMovie(nonExistentTitle)).rejects.toThrow(NotFoundException);
       expect(repository.findOne).toHaveBeenCalledWith({ where: { title: nonExistentTitle } });
       expect(repository.delete).not.toHaveBeenCalled();

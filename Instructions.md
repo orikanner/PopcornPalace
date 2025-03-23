@@ -1,3 +1,8 @@
+# Install dependencies
+npm i
+
+-------------
+
 # Database setup
 - Docker desktop
 $ docker-compose up -d
