@@ -1,7 +1,7 @@
 import { Movie } from "src/modules/movies/entities/movie.entity";
 import { Showtime } from "../../entities/showtime.entity";
 
-export const createShowtimeMock = (override = {}): Showtime => ({
+export const createShowtimeMock = (override: Partial<Showtime> = {}): Showtime => ({
     id: 1,
     price: 15,
     movieId: 1,

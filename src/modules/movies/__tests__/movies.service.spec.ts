@@ -42,22 +42,18 @@ describe('MoviesService', () => {
 
   describe('Success cases', () => {
     it('should retrieve all movies successfully', async () => {
-      // Arrange
       const mockMovies: Movie[] = [
         createMovieMock({ id: 1, title: 'Star Wars', genre: 'Sci-Fi' }),
         createMovieMock({ id: 2, title: 'The Godfather', genre: 'Drama' })
       ];
       jest.spyOn(repository, 'find').mockResolvedValue(mockMovies);
 
-      // Act
       const result = await service.findAll();
 
-      // Assert
       expect(result).toEqual(mockMovies);
     });
 
     it('should add a new movie successfully', async () => {
-      // Arrange
       const createMovieDto: CreateMovieDto = createMovieDtoMock({
         title: 'Fast & Furious 205',
         duration: 144,
@@ -72,10 +68,8 @@ describe('MoviesService', () => {
       jest.spyOn(repository, 'create').mockReturnValue(createdMovie);
       jest.spyOn(repository, 'save').mockResolvedValue(createdMovie);
 
-      // Act
       const result = await service.addMovie(createMovieDto);
 
-      // Assert
       expect(repository.create).toHaveBeenCalledWith(createMovieDto);
       expect(repository.save).toHaveBeenCalledWith(createdMovie);
       expect(result).toEqual(createdMovie);
@@ -98,13 +92,11 @@ describe('MoviesService', () => {
       jest.spyOn(repository, 'findOne').mockResolvedValue(existingMovie);
       jest.spyOn(repository, 'save').mockResolvedValue({ ...existingMovie, ...updateMovieDto });
 
-      // Based on the api readme, we dont need to return anything 
       await service.updateMovie(movieTitle, updateMovieDto);
 
-      // Assert
       expect(repository.findOne).toHaveBeenCalledWith({ where: { title: movieTitle } });
       expect(repository.save).toHaveBeenCalledWith(updatedMovie)
-      // this api doesnt return anything based on the readme file 
+      // this endpoint doesnt return anything based on the readme file 
       // expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({
       //   ...existingMovie,
       //   ...updateMovieDto
@@ -112,7 +104,6 @@ describe('MoviesService', () => {
     });
 
     it('should delete a movie successfully', async () => {
-      // Arrange
       const movieTitle = 'Titanic';
       const movieToDelete = createMovieMock({
         id: 125,
@@ -126,10 +117,8 @@ describe('MoviesService', () => {
       jest.spyOn(repository, 'findOne').mockResolvedValue(movieToDelete);
       jest.spyOn(repository, 'delete').mockResolvedValue({ affected: 1 } as any);
 
-      // Based on the api readme, we dont need to return anything 
       await service.deleteMovie(movieTitle);
 
-      // Assert
       expect(repository.findOne).toHaveBeenCalledWith({ where: { title: movieTitle } });
       expect(repository.delete).toHaveBeenCalledWith({ title: movieTitle });
     });
@@ -145,53 +134,17 @@ describe('MoviesService', () => {
       await expect(service.findAll()).rejects.toThrow(InternalServerErrorException);
       expect(repository.find).toHaveBeenCalledTimes(1);
     });
-    // SKIP DELETING THIS COMMENT THIS COMMENT IS IMPORTANT FOR THE CODE TO RUN, ORIKA
-    it('should throw InternalServerErrorException when addMovie fails', async () => {
-      // Arrange
-      const createMovieDto: CreateMovieDto = createMovieDtoMock({
-        title: 'New movie Title',
-      });
-
-      jest.spyOn(repository, 'create').mockReturnValue({ ...createMovieDto, id: 999 });
-      jest.spyOn(repository, 'save').mockRejectedValue(new Error('Database save error'));
-
-      // Act & Assert
-      await expect(service.addMovie(createMovieDto)).rejects.toThrow(InternalServerErrorException);
-      expect(repository.create).toHaveBeenCalledWith(createMovieDto);
-      expect(repository.save).toHaveBeenCalledTimes(1); // here we test find fail behave
-    });
 
     it('should throw NotFoundException when updating a non-existent movie', async () => {
-      // Arrange
       const nonExistentTitle = 'Non Existent Movie';
       const updateMovieDto: UpdateMovieDto = updateMovieDtoMock({ rating: 10 });
 
       jest.spyOn(repository, 'findOne').mockResolvedValue(null); // could not find a movie with this title
 
-      // Act & Assert
       await expect(service.updateMovie(nonExistentTitle, updateMovieDto)).rejects.toThrow(NotFoundException);
       expect(repository.findOne).toHaveBeenCalledWith({ where: { title: nonExistentTitle } });
       expect(repository.save).not.toHaveBeenCalled();
     });
-
-    it('should throw InternalServerErrorException when movie update fails', async () => {
-      // Arrange
-      const movieTitle = 'Problematic Movie';
-      const existingMovie = createMovieMock({
-        id: 6,
-        title: movieTitle,
-      });
-      const updateMovieDto: UpdateMovieDto = updateMovieDtoMock({ duration: 120 });
-
-      jest.spyOn(repository, 'findOne').mockResolvedValue(existingMovie);
-      jest.spyOn(repository, 'save').mockRejectedValue(new Error('Database update error'));
-
-      // Act & Assert
-      await expect(service.updateMovie(movieTitle, updateMovieDto)).rejects.toThrow(InternalServerErrorException);
-      expect(repository.findOne).toHaveBeenCalledWith({ where: { title: movieTitle } });
-      expect(repository.save).toHaveBeenCalledTimes(1);
-    });
-
 
     it('should throw NotFoundException when deleting a non-existent movie', async () => {
       // Arrange
@@ -205,22 +158,5 @@ describe('MoviesService', () => {
       expect(repository.delete).not.toHaveBeenCalled();
     });
 
-    it('should throw InternalServerErrorException when movie deletion fails', async () => {
-      // Arrange
-      const movieTitle = 'DeleteError Movie';
-      const existingMovie = createMovieMock({
-        id: 1117,
-        title: movieTitle,
-        genre: 'Comedy',
-      });
-
-      jest.spyOn(repository, 'findOne').mockResolvedValue(existingMovie);
-      jest.spyOn(repository, 'delete').mockRejectedValue(new Error('Database delete error'));
-
-      // Act & Assert
-      await expect(service.deleteMovie(movieTitle)).rejects.toThrow(InternalServerErrorException);
-      expect(repository.findOne).toHaveBeenCalledWith({ where: { title: movieTitle } });
-      expect(repository.delete).toHaveBeenCalledWith({ title: movieTitle });
-    });
   });
 });

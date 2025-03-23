@@ -57,9 +57,8 @@ export class MoviesService {
             Object.assign(movie, updateData);
             await this.moviesRepository.save(movie);
         } catch (error) {
-            if (error instanceof NotFoundException) {
+            if (error instanceof NotFoundException)
                 throw error;
-            }
             if (error.code == 23505) // from postgresql Class 23 — Integrity Constraint Violation
                 throw new ConflictException(`Movie named: "${movieTitle}" already exists.`);
             throw new InternalServerErrorException('Something went wrong while updating the movie.');
@@ -81,9 +80,8 @@ export class MoviesService {
 
             await this.moviesRepository.delete({ title: movieTitle });
         } catch (error) {
-            if (error instanceof NotFoundException) {
+            if (error instanceof NotFoundException)
                 throw error;
-            }
             throw new InternalServerErrorException('Something went wrong while deleting the movie.');
         }
     }

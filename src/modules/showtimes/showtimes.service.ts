@@ -1,31 +1,39 @@
+//https://www.postgresql.org/docs/current/errcodes-appendix.html
+//https://typeorm.io/select-query-builder
 import { BadRequestException, HttpException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Showtime } from './entities/showtime.entity';
 import { CreateShowtimeDto } from './dto/create-showtime.dto';
-import { DataSource } from 'typeorm';
 import { UpdateShowtimeDto } from './dto/update-showtime.dto';
+import { Movie } from '../movies/entities/movie.entity';
+// In this service, I originally implemented create&update operations with transactions and row locking.
+// Although it passed all tests, I felt it was overkill.
+// Without transactions or some other solution, there's a potential race condition where P1 and P2 could both read,
+// see no overlap, and write simultaneously which would cause overlap.
 
-// !!! DONT FORGET
-// BECAUSE OF the foreign_key IN SHOWTIME ENTITY we will get an error during CU actions when using an invalid foreign_key
-//https://www.postgresql.org/docs/current/errcodes-appendix.html
+
+interface ShowtimeValidationResult {
+    movieExists: boolean;
+    durationValid: boolean;
+    isAfterRelease: boolean;
+}
+
 
 @Injectable()
 export class ShowtimesService {
     constructor(
         @InjectRepository(Showtime)
         private showtimeRepository: Repository<Showtime>,
-        private readonly dataSource: DataSource
+        @InjectRepository(Movie)
+        private movieRepository: Repository<Movie>,
+
     ) { }
 
-    // for testing purposes
-    async getAllShowtimes(): Promise<Showtime[]> {
-        return await this.showtimeRepository.find()
-    }
-
     /**
-     * Get showtime by id from the database.
-     * If the showtime is not found, throws NotFoundException.
+     * Gets a showtime by its ID
+     * Throws NotFoundException if not found
+     * @returns Promise<Showtime> The found showtime
      */
     async getShowtimeById(showtimeId: number): Promise<Showtime> {
         try {
@@ -34,110 +42,127 @@ export class ShowtimesService {
 
             return showtime
         } catch (error) {
-            if (error instanceof NotFoundException) {
-                throw error
-            }
+            if (error instanceof NotFoundException) throw error
             throw new InternalServerErrorException('Failed to get showtime');
         }
     }
 
+
     /**
-     * Add a showtime
-     * * Map dto to entity.
-     * Save the showtime to the db
-     * if something fails in the DB, an InternalServerErrorException is thrown.
-     *  //https://typeorm.io/select-query-builder
+     * Creates a new showtime
+     * Handles theater overlap checks and movie duration validation
+     * @param createShowtimeDto - Data for creating new showtime
+     * @returns The newly created showtime
+     * @throws BadRequestException if theater is busy or duration is insufficient
+     * @throws NotFoundException if movie does not exist
      */
     async addShowtime(createShowtimeDto: CreateShowtimeDto): Promise<Showtime> {
-        const { theater, startTime, endTime } = createShowtimeDto;
+        const { movieId, theater, startTime, endTime } = createShowtimeDto;
 
-        this.validate_dates(startTime, endTime);
-        
         try {
-            // i think here we want to fetch the movie based on the movie id from the createshowtimedto
-            // and check if the startTime.year >= realeaseDate
-            // only then continue
-            // same with updating  
-            return await this.dataSource.transaction("SERIALIZABLE", async (entityManager) => {
-                // Check for overlapping showtimes
-                const count = await entityManager.createQueryBuilder(Showtime, 'showtime')
-                    .where('showtime.theater = :theater', { theater })
-                    //.andWhere(new Brackets((qb) => { // cool syntax. to add () around wheres .addWhere(new Brackets...
-                    .andWhere('showtime.startTime <= :endTime', { endTime })
-                    .andWhere('showtime.endTime >= :startTime', { startTime })
-                    .getCount();
+            // step 1 validate that start time is before end time
+            this.validateDates(startTime, endTime);
 
-                if (count > 0) {
-                    throw new BadRequestException('At the requested time there is already a showtime scheduled in this theater');
-                }
-                const newShowtime = entityManager.create(Showtime, createShowtimeDto);
-                return await entityManager.save(newShowtime);
-            });
+            // step 2: Validate movie exists and check constraints
+            const validations = await this.validateShowtimeWithMovie(
+                movieId,
+                startTime,
+                endTime
+            );
+
+            // Handle any validation failures (will throw exceptions if validations fail
+            this.handleValidations(validations);
+
+            // step 3 Check for scheduling conflicts in the requested theater
+            // for new showtimes, we don't need to exclude any existing showtime ID
+            const excludeSelfShowtime: number = null;
+
+            // query for any overlapping showtimes and count them
+            const countOverlappingShowtimes = await this.createOverlapQuery(
+                theater,
+                startTime,
+                endTime,
+                excludeSelfShowtime
+            ).getCount();
+
+            // if any overlaps exist, theater is already booked during that time
+            if (countOverlappingShowtimes > 0) {
+                throw new BadRequestException(
+                    'At the requested time there is already a showtime scheduled in this theater'
+                );
+            }
+
+            // step 4 All validations passed, create and save the new showtime
+            const newShowtime = this.showtimeRepository.create(createShowtimeDto);
+            return await this.showtimeRepository.save(newShowtime);
 
         } catch (error) {
-            if (error.code == 23503) { // Class 23 — Integrity Constraint Violation
-                throw new InternalServerErrorException('Failed to create showtime ~ invalid movieId');
-            }
-            if (error instanceof BadRequestException) {
-                throw error; // Forward expected validation error
-            }
+            // Class 23 — Integrity Constraint Violation 
+            if (error.code == 23503) throw new BadRequestException('Failed to create showtime ~ invalid movieId');
+            if (error instanceof BadRequestException || error instanceof NotFoundException) throw error;
             throw new InternalServerErrorException('Failed to create showtime');
         }
     }
 
-
     /**
-     * Update an existingshowtime
-     * If the showtime is not found, throws NotFoundException.
-     * If the update fails, throws InternalServerErrorException.
+     * Updates an existing showtime
+     * Only validates conflicts when time/theater fields are modified
+     * @param showtimeId - ID of showtime to update
+     * @param updateShowtimeDto - Updated showtime data
+     * @returns The updated showtime
+     * @throws NotFoundException if showtime does not exist
+     * @throws BadRequestException if update creates scheduling conflict
      */
-    async updateShowTime(showtimeId: number, updateShowtimeDto: UpdateShowtimeDto) {
+    async updateShowtime(showtimeId: number, updateShowtimeDto: UpdateShowtimeDto) {
         try {
-            return await this.dataSource.transaction("SERIALIZABLE", async (entityManager) => {
-                // Find the showtime to update
-                const showtime = await entityManager.createQueryBuilder(Showtime, 'showtime')
-                    .setLock('pessimistic_write') // This is basicly FOR UPDATE I used it to lock the row so it wont be deleted while we are updating it || concurrency bothered me idk :)
-                    .where('showtime.id = :showtimeId', { showtimeId })
-                    .getOne()
-                if (!showtime) throw new NotFoundException(`Showtime with id "${showtimeId}" not found.`)
+            // Step 1 Find the showtime to update
+            const showtime = await this.showtimeRepository.createQueryBuilder('showtime')
+                .where('showtime.id = :showtimeId', { showtimeId })
+                .getOne()
+            if (!showtime) throw new NotFoundException(`Showtime with id "${showtimeId}" not found.`)
+            // Step 2: Check conflicts if updateShowtimeDto contains attributes that can cause overlapping or edge cases problems
+            if (updateShowtimeDto.movieId || updateShowtimeDto.theater || updateShowtimeDto.startTime || updateShowtimeDto.endTime) {
+                const movieId = updateShowtimeDto.movieId ?? showtime.movieId
+                const theater = updateShowtimeDto.theater ?? showtime.theater
+                const startTime = updateShowtimeDto.startTime ?? showtime.startTime
+                const endTime = updateShowtimeDto.endTime ?? showtime.endTime
 
-                // Only check confilcts if updateShowtimeDto contains theater, startTime or endTime
-                if (updateShowtimeDto.theater || updateShowtimeDto.startTime || updateShowtimeDto.endTime) {
-                    const { theater, startTime, endTime } = updateShowtimeDto
-                    this.validate_dates(startTime, endTime);
+                // validate that start time is before end time
+                this.validateDates(startTime, endTime);
+                // edge cases validatiosn that can be caused by movie realse time etc 
+                const validations = await this.validateShowtimeWithMovie(movieId, startTime, endTime)
+                this.handleValidations(validations)
 
-                    const count_overlapping = await entityManager.createQueryBuilder(Showtime, 'showtime')
-                        .where('showtime.theater = :theater', { theater })
-                        .andWhere('showtime.startTime <= :endTime', { endTime })
-                        .andWhere('showtime.endTime >= :startTime', { startTime })
-                        .andWhere('NOT(showtime.id = :showtimeId)', { showtimeId }) //verify !!
-                        .getCount(); //remove self maybe need to check 
-                    if (count_overlapping > 0) {
-                        throw new BadRequestException('At the requested time there is already a showtime scheduled in this theater');
-                    }
+                // Step 3 count overlappingshowtimes- again only if the new attributes can cause confilcts 
+                let excludeSelfShowtime: number = showtimeId
+                const countOverlappingShowtimes = await this.createOverlapQuery(
+                    theater,
+                    startTime,
+                    endTime,
+                    excludeSelfShowtime
+                ).getCount()
+                if (countOverlappingShowtimes > 0) {
+                    throw new BadRequestException('At the requested time there is already a showtime scheduled in this theater');
                 }
-
-                const updatedShowtime = { ...showtime, ...updateShowtimeDto }
-                const updatedShowtimeEntity = entityManager.create(Showtime, updatedShowtime);
-                return await entityManager.save(updatedShowtimeEntity)
-            })
+            }
+            // Final step save update showtime
+            const updatedShowtime = { ...showtime, ...updateShowtimeDto }
+            const updatedShowtimeEntity = this.showtimeRepository.create(updatedShowtime);
+            return await this.showtimeRepository.save(updatedShowtimeEntity)
 
         } catch (error) {
-            if (error.code == 23503) { // Class 23 - Integrity Constraint Violation 
-                throw new InternalServerErrorException('Failed to update showtime ~ invalid movieId');
-            }
-            if (error instanceof NotFoundException || error instanceof BadRequestException) {
-                throw error
-            }
+            // Class 23 - Integrity Constraint Violation 
+            if (error.code == 23503) throw new BadRequestException('Failed to update showtime invalid movie');
+            if (error instanceof NotFoundException || error instanceof BadRequestException) throw error
             throw new InternalServerErrorException('Failed to update showtime');
         }
     }
 
+
     /**
-     * Delete a showtime
-     * gets showtimeId 
-     * * If the showtime does not exist, throws NotFoundException.
-     * If something fails while deleting, throws InternalServerErrorException.
+     * Deletes a showtime by ID
+     * Throws NotFound if it doesn't exist
+     * @param showtimeId - ID of showtime to delete
      */
     async deleteShowtime(showtimeId: number) {
         try {
@@ -146,17 +171,95 @@ export class ShowtimesService {
 
             await this.showtimeRepository.delete({ id: showtimeId })
         } catch (error) {
-            if (error instanceof NotFoundException) {
-                throw error
-            }
+            if (error instanceof NotFoundException) throw error
             throw new InternalServerErrorException('Failed to delete showtime');
         }
 
     }
-    private validate_dates(startTime: Date, endTime: Date) {
+
+
+    /**
+     * Checks for overlapping showtimes in a theater
+     * @param theater - Theater to check
+     * @param startTime - Start of time window
+     * @param endTime - End of time window
+     * @param excludeShowtimeId - Skip this showtime ID when checking
+     * @returns QueryBuilder for overlapping showtimes
+     */
+    private createOverlapQuery(
+        theater: string,
+        startTime: Date,
+        endTime: Date,
+        excludeSelf: number
+    ) {
+        // Create query using the repository's query builder
+        const query = this.showtimeRepository.createQueryBuilder('showtime')
+            .where('showtime.theater = :theater', { theater })
+            .andWhere('showtime.startTime <= :endTime', { endTime })
+            .andWhere('showtime.endTime >= :startTime', { startTime });
+
+        // If an ID is provided to exclude (for updates), add that condition
+        if (excludeSelf) {
+            query.andWhere('showtime.id != :excludeId', { excludeId: excludeSelf });
+        }
+
+        return query;
+    }
+
+
+    /**
+     * Validates showtime dates
+     * @param startTime - Showtime start
+     * @param endTime - Showtime end
+     * @throws BadRequestException if start is after end
+     */
+    private validateDates(startTime: Date, endTime: Date) {
         if (new Date(startTime) >= new Date(endTime)) {
             throw new BadRequestException("Start time can't be after endTime")
         }
     }
 
+
+    /**
+     * Validates movie and showtime constraints
+     * @param movieId - Movie to validate
+     * @param startTime - Showtime start
+     * @param endTime - Showtime end
+     * @returns Movie exists, duration is valid, release date is valid
+     */
+    private async validateShowtimeWithMovie(
+        movieId: number,
+        startTime: Date,
+        endTime: Date
+    ): Promise<ShowtimeValidationResult> {
+        const movie = await this.movieRepository.findOne({ where: { id: movieId } });
+
+        if (!movie) {
+            return { movieExists: false, durationValid: false, isAfterRelease: false };
+        }
+
+        const start = new Date(startTime);
+        const end = new Date(endTime);
+        const durationInMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
+
+        return {
+            movieExists: true,
+            durationValid: durationInMinutes >= movie.duration,
+            isAfterRelease: start.getFullYear() >= movie.releaseYear
+        };
+    }
+
+
+    /**
+     * Validates movie and showtime constraints
+     * @param validations - output of validateShowtimeWithMovie function
+     * @throws an error if needed
+     */
+    private handleValidations(
+        validations: ShowtimeValidationResult
+    ) {
+        if (!validations.movieExists) throw new NotFoundException(`Movie with the provided id was not found.`);
+        if (!validations.isAfterRelease) throw new BadRequestException(`Showtime cannot be scheduled before movie's release year`);
+        if (!validations.durationValid) throw new BadRequestException(`Showtime duration is too short for this movie`);
+    }
 }

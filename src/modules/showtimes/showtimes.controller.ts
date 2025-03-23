@@ -5,17 +5,13 @@ import { UpdateShowtimeDto } from './dto/update-showtime.dto';
 
 @Controller('showtimes')
 export class ShowtimesController {
-    constructor(private readonly showtimesService: ShowtimesService) {}
-    @Get()
-    async getAllShowtimes(){
-        return await this.showtimesService.getAllShowtimes()
-    }
+    constructor(private readonly showtimesService: ShowtimesService) { }
 
     @Get('/:showtimeId')
     @HttpCode(200)
     async getShowtimeById(
         @Param('showtimeId') showtimeId: number
-    ){
+    ) {
         return await this.showtimesService.getShowtimeById(showtimeId)
     }
 
@@ -31,13 +27,13 @@ export class ShowtimesController {
     async updateShowtime(
         @Param('showtimeId') showtimeId: number,
         @Body() updateShowtimeDto: UpdateShowtimeDto
-    ){
-        await this.showtimesService.updateShowTime(showtimeId, updateShowtimeDto)
+    ) {
+        await this.showtimesService.updateShowtime(showtimeId, updateShowtimeDto)
     }
-    
+
     @Delete('/:showtimeId')
     @HttpCode(200)
-    async deleteShowtime(@Param('showtimeId') showtimeId: number){
+    async deleteShowtime(@Param('showtimeId') showtimeId: number) {
         await this.showtimesService.deleteShowtime(showtimeId)
     }
 }
